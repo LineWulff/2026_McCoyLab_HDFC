@@ -44,13 +44,13 @@ sample_dir <- "/Users/linewulff/Documents/work/projects/2026_McCoyLab_HDFC/test_
 condor <- prep_fcd(data_path = sample_dir, 
                    cross_path_with_anno = TRUE,
                    max_cell = 10000000, # 10000000 start w. high limit to include all
-                   useCSV = TRUE, 
+                   useCSV = TRUE, # change to false if using fcs files
                    transformation = "auto_logi", #"arcsinh",
                    #remove_param = c("FSC-H", "SSC-H", "FSC-W", "SSC-W", "Time"), 
-                   anno_table = paste0(sample_dir,"AnnoTable_ext.csv"), 
+                   anno_table = paste0(sample_dir,"AnnoTable.csv"), 
                    filename_col = "filename")
 
-AnnoTable <- read.csv(paste0(sample_dir,"AnnoTable_ext.csv"), row.names = 1)
+AnnoTable <- read.csv(paste0(sample_dir,"AnnoTable.csv"), row.names = 1)
 
 # all meta data stored per cell in below, you can add, change and color/split plots/stats by anything added here as you go
 head(condor$anno$cell_anno)

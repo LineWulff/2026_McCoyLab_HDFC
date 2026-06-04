@@ -27,6 +27,7 @@ library(scales)
 source("find_high_cor_pairs.R") # should be saved in working directory
 source("plot_pseudobulkPCA.R") # -||-
 source("perc_dist.R") # -||-
+source("geom_cluster_labels.R")  # -||-
 
 #### ---- Variables to use for script - MANDATORY--- ####
 dato <- str_sub(str_replace_all(Sys.Date(),"-","_"), 3, -1)
@@ -157,7 +158,7 @@ condor$umap$orig <- umap_emb[,c(1,2)]; colnames(condor$umap$orig) <- c("UMAP1","
 
 #### ---- Plotting UMAPs ---####
 # first set whether you're using batch corrected or not
-batchcor <- "No" #or "No"
+batchcor <- "Yes" # "Yes" or "No"
 ## first creating a folder
 if(batchcor=="No"){if (file.exists("UMAPs")){} else {dir.create(file.path(main_dir, "UMAPs"))};umap <-"orig";umap_dir <- "UMAPs/";input_expr <- c("expr","orig")} else if(batchcor=="Yes"){if (file.exists("UMAPs_bc")){} else {dir.create(file.path(main_dir, "UMAPs_bc"))};umap <-"pca_norm";umap_dir <- "UMAPs_bc/";input_expr <- c("pca","norm")}
 
@@ -252,6 +253,12 @@ for (mark in marker_cols){
 
 
 #### ---- Clustering w. FlowSOM ---- ####
+# first set whether you're using batch corrected or not
+batchcor <- "Yes" # "Yes" or "No"
+## first creating a folder
+if(batchcor=="No"){if (file.exists("UMAPs")){} else {dir.create(file.path(main_dir, "UMAPs"))};umap <-"orig";umap_dir <- "UMAPs/";input_expr <- c("expr","orig")} else if(batchcor=="Yes"){if (file.exists("UMAPs_bc")){} else {dir.create(file.path(main_dir, "UMAPs_bc"))};umap <-"pca_norm";umap_dir <- "UMAPs_bc/";input_expr <- c("pca","norm")}
+
+
 # run multiple resolutions/cluster numbers for flowsom at once
 clus_res <- seq(5,18) # calculating from 5 to 15 clusters
 for (res in clus_res){
@@ -267,7 +274,7 @@ for (res in clus_res){
 #                      input_type = input_expr, 
 #                      data_slot = "orig", 
 #                      nClusters = 10)
-clus_res <- seq(10,40,3)
+clus_res <- seq(20,60,5)
 for (res in clus_res){
   print(res)
   # calculating
@@ -284,12 +291,15 @@ for (clus in names(condor$clustering)){
   # Detect different clustering methods
   if (startsWith(clus,"Flow")){clus_var = "FlowSOM"} else {clus_var = "phenograph"}
   if (length(unique(condor$clustering[[clus]][,1]))<50){
-  p1 <- ggplot(as.data.frame(condor$umap[[umap]]), 
-               aes(x=UMAP1, y=UMAP2, color = condor$clustering[[clus]][,1]))+
+    plot_df <- cbind(as.data.frame(condor$umap[[umap]]),clustering=condor$clustering[[clus]][,1])
+    
+  p1 <- ggplot(plot_df, 
+               aes(x=UMAP1, y=UMAP2, color = clustering))+
     geom_point_rast()+
     labs(color="", title = clus)+
     theme_classic()+
     theme(axis.ticks = element_blank(),axis.text = element_blank())
+  p1 <- p1+geom_cluster_labels(plot_df, "clustering")
   pdf(paste0(main_dir,umap_dir,dato,proj,"_UMAP_",clus,".pdf"), width = 7, height = 5)
   print(p1)
  dev.off()}
@@ -302,16 +312,16 @@ batchcor <- "Yes" #or "No"
 ## first creating a folder
 if(batchcor=="No"){if (file.exists("UMAPs")){} else {dir.create(file.path(main_dir, "UMAPs"))};umap <-"orig";umap_dir <- "UMAPs/";input_expr <- c("expr","orig")} else if(batchcor=="Yes"){if (file.exists("UMAPs_bc")){} else {dir.create(file.path(main_dir, "UMAPs_bc"))};umap <-"pca_norm";umap_dir <- "UMAPs_bc/";input_expr <- c("pca","norm")}
 
-#### ---- Inspectiion of specific clusterings ---- ####
+#### ---- Inspection of specific clusterings ---- ####
 ## color UMAP by cluster
 # Set res to any of the clustering run below and plot for this resolution
 # check avalable clusterings, res should match one of these
 names(condor$clustering)
 # check number of clusters in a particular phenograph clustering
-length(unique(condor$clustering[["phenograph_expr_orig_k_40"]][,1]))
+length(unique(condor$clustering[["FlowSOM_pca_norm_k_14" ]][,1]))
 ## FlowSOM clusterings examples
 res <- "FlowSOM_expr_orig_k_7" # NO batch correction
-res <- "FlowSOM_pca_norm_k_10" # batch corrected
+res <- "FlowSOM_pca_norm_k_14" # batch corrected
 #Phenograph clustering example
 res <- "phenograph_expr_orig_k_80" # NO natch correction
 res <- "phenograph_pca_norm_k_34" # batch corrected
@@ -408,9 +418,48 @@ p1 <- condor_cluster_composition(
 print(p1)
 ggsave(paste0(main_dir,res,"/",dato,proj,"_SampleDistribution.pdf"), width = 0.33*length(unique(condor$clustering[[res]][,1])), height = 5, units = "in", plot = p1)
 
-#### ---- Label and subset condor object ---- #### 
+#### ---- Label and subset condor object - metaclustering ---- #### 
 # replace and extend labels depending on your clustering
 # you need labels for all cell, but can be NA/unkown
-ID_labels <- c("0"=,)
+# here you can also merge vy having the same ID for multiple cluster numbers
+condor <- metaclustering(fcd = condor, 
+                         cluster_slot = res, 
+                         cluster_var = clus_var, 
+                         cluster_var_new = "metaclusters", 
+                         metaclusters = c("1" = "Classical Monocytes",
+                                          "2" = "CD4 CD45RA+ CD127+",
+                                          "3" = "CD8 CD45RA+ CD127+", 
+                                          "4" = "NK dim",
+                                          "5" = "CD8 CD45RA+ CD127-",
+                                          "6" = "Classical Monocytes",
+                                          "7" = "Unconventional T cells", 
+                                          "8" = "CD4 CD45RA- CD127+",
+                                          "9" = "CD16+ Monocytes",
+                                          "10" = "CD4 CD127-",
+                                          "11" = "Classical Monocytes", 
+                                          "12" = "CD8 CD45RA- CD127+", 
+                                          "13" = "CD8 CD45RA- CD127+",
+                                          "14" = "NK bright",
+                                          "15" = "CD8 CD45RA+ CD127-",
+                                          "16" = "CD4 CD25+",
+                                          "17" = "B cells",
+                                          "18" = "Unconventional T cells",
+                                          "19" = "Classical Monocytes",
+                                          "20" = "pDCs",
+                                          "21" = "CD8 CD45RA+ CD127+",
+                                          "22" = "Basophils",
+                                          "23" = "Mixed",
+                                          "24" = "B cells",
+                                          "25" = "NK bright"))
+
+## If you want to combine clusters from another clustering
+condor$clustering[["metaclusters"]] <- condor$clustering[[res]]
+# pick cells from the other clustering
+rare_cells <- rownames(condor$clustering[["phenograph_pca_norm_k_25"]][condor$clustering[["phenograph_pca_norm_k_25"]][,"Phenograph"] == 21,])
+condor$clustering[["metaclusters"]][rare_cells,"metaclusters"] <- "pDC"
 
 
+# you can now set your res to your annotated clustering and rerun your plots from above
+res <- "annotated_clustering"
+
+#### ----####

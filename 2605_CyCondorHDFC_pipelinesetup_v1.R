@@ -324,13 +324,15 @@ res <- "FlowSOM_expr_orig_k_7" # NO batch correction
 res <- "FlowSOM_pca_norm_k_14" # batch corrected
 #Phenograph clustering example
 res <- "phenograph_expr_orig_k_80" # NO natch correction
-res <- "phenograph_pca_norm_k_34" # batch corrected
+res <- "phenograph_pca_norm_k_22" # batch corrected
+# or if you want to run with your annotated clusters (see section: Label and subset condor object - metaclustering)
+res <- "metaclusters"
 # run below line for ease of plotting further down
-if (startsWith(res,"Flow")){clus_var = "FlowSOM"} else {clus_var = "Phenograph"}
+if (startsWith(res,"Flow")){clus_var = "FlowSOM"} else if(startsWith(res,"pheno")) {clus_var = "Phenograph"} else {clus_var <- "metaclusters"}
   
 # split per condition
 p1 <- ggplot(condor$umap[[umap]], 
-       aes(x=UMAP1, y=UMAP2, color = condor$clustering[[res]][,1]))+
+       aes(x=UMAP1, y=UMAP2, color = condor$clustering[[res]][,clus_var]))+
   geom_point_rast()+
   facet_wrap(~condor$anno$cell_anno$condition, scales = "free")+
   labs(color=res)+
@@ -341,7 +343,7 @@ ggsave(paste0(main_dir,umap_dir,dato,proj,"_UMAPsplit_conditionx",res,".pdf"), w
 
 # one UMAP
 p1 <- ggplot(condor$umap[[umap]], 
-       aes(x=UMAP1, y=UMAP2, color = condor$clustering[[res]][,1]))+
+       aes(x=UMAP1, y=UMAP2, color = condor$clustering[[res]][,clus_var]))+
   geom_point_rast()+
   labs(color=res)+
   theme_classic()+
@@ -398,7 +400,7 @@ p1 <- plot_marker_HM(fcd = condor,
 print(p1)
 ggsave(paste0(main_dir,res,"/",dato,proj,"_heatmap_avScaExp.pdf"), width = 6, height = 10, units = "in", plot = p1)
 
-#### ---- Sample distribution plots - NOT DONE STOP HERE ---- ####
+#### ---- Sample distribution plots ---- ####
 p1 <- plot_confusion_HM(fcd = condor,
                   cluster_slot = res, 
                   cluster_var = clus_var,
@@ -426,40 +428,51 @@ condor <- metaclustering(fcd = condor,
                          cluster_slot = res, 
                          cluster_var = clus_var, 
                          cluster_var_new = "metaclusters", 
-                         metaclusters = c("1" = "Classical Monocytes",
-                                          "2" = "CD4 CD45RA+ CD127+",
-                                          "3" = "CD8 CD45RA+ CD127+", 
-                                          "4" = "NK dim",
-                                          "5" = "CD8 CD45RA+ CD127-",
-                                          "6" = "Classical Monocytes",
-                                          "7" = "Unconventional T cells", 
-                                          "8" = "CD4 CD45RA- CD127+",
-                                          "9" = "CD16+ Monocytes",
-                                          "10" = "CD4 CD127-",
-                                          "11" = "Classical Monocytes", 
-                                          "12" = "CD8 CD45RA- CD127+", 
-                                          "13" = "CD8 CD45RA- CD127+",
-                                          "14" = "NK bright",
-                                          "15" = "CD8 CD45RA+ CD127-",
-                                          "16" = "CD4 CD25+",
-                                          "17" = "B cells",
-                                          "18" = "Unconventional T cells",
-                                          "19" = "Classical Monocytes",
-                                          "20" = "pDCs",
-                                          "21" = "CD8 CD45RA+ CD127+",
-                                          "22" = "Basophils",
-                                          "23" = "Mixed",
-                                          "24" = "B cells",
-                                          "25" = "NK bright"))
+                         metaclusters = c("1" = "CD14+ monocytes",
+                                          "2" = "CD14+ monocytes",
+                                          "3" = "NK cells", 
+                                          "4" = "iNK T cells",
+                                          "5" = "naive CD8+ T cells",
+                                          "6" = "pDCs",
+                                          "7" = "mem/eff CD8+ T cells", 
+                                          "8"="B cells",
+                                          "9" = "Unknown",
+                                          "10" = "mem/eff CD4+ T cells",
+                                          "11" = "naive CD4+ T cell", 
+                                          "12" = "mem/eff CD4+ T cells", 
+                                          "13" = "naive CD4+ T cell",
+                                          "14" = "mem/eff CD4+ T cells"))
 
 ## If you want to combine clusters from another clustering
-condor$clustering[["metaclusters"]] <- condor$clustering[[res]]
-# pick cells from the other clustering
-rare_cells <- rownames(condor$clustering[["phenograph_pca_norm_k_25"]][condor$clustering[["phenograph_pca_norm_k_25"]][,"Phenograph"] == 21,])
-condor$clustering[["metaclusters"]][rare_cells,"metaclusters"] <- "pDC"
+condor$clustering[["metaclusters"]] <- condor$clustering[["FlowSOM_pca_norm_k_14"]]
+condor$clustering[["metaclusters"]][,"metaclusters"] <- as.character(condor$clustering[["metaclusters"]][,"metaclusters"])
 
+## do once per cluster you want overwrite
+# pick cells from the other clustering
+rare_cells <- rownames(condor$clustering[["phenograph_pca_norm_k_22"]][condor$clustering[["phenograph_pca_norm_k_22"]][,"Phenograph"] == 21,])
+# overwrite their current label
+condor$clustering[["metaclusters"]][rare_cells,"metaclusters"] <- "CD16+ monocytes"
+
+rare_cells <- rownames(condor$clustering[["phenograph_pca_norm_k_22"]][condor$clustering[["phenograph_pca_norm_k_22"]][,"Phenograph"] == 20,])
+condor$clustering[["metaclusters"]][rare_cells,"metaclusters"] <- "cDCs?"
+
+rare_cells <- rownames(condor$clustering[["phenograph_pca_norm_k_22"]][condor$clustering[["phenograph_pca_norm_k_22"]][,"Phenograph"] == 17,])
+condor$clustering[["metaclusters"]][rare_cells,"metaclusters"] <- "B cells"
 
 # you can now set your res to your annotated clustering and rerun your plots from above
-res <- "annotated_clustering"
+res <- "metaclusters"; clus_var <- "metaclusters"
 
-#### ----####
+# UMAP with labels
+plot_df <- cbind(as.data.frame(condor$umap[[umap]]),clustering=condor$clustering[["metaclusters"]][,"metaclusters"])
+p1 <- ggplot(plot_df, 
+             aes(x=UMAP1, y=UMAP2, color = clustering))+
+  geom_point_rast()+
+  labs(color="", title = "metaclustering")+
+  theme_classic()+
+  theme(axis.ticks = element_blank(),axis.text = element_blank())
+p1 <- p1+geom_cluster_labels(plot_df, "clustering")
+print(p1)
+ggsave(paste0(main_dir,umap_dir,dato,proj,"_UMAP_",clus,".pdf"), width = 7, height = 5, plot = p1)
+
+
+#### ---- ---- ####

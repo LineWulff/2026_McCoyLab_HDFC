@@ -33,6 +33,11 @@ source("geom_cluster_labels.R")  # -||-
 dato <- str_sub(str_replace_all(Sys.Date(),"-","_"), 3, -1)
 proj <- "CovidHealthPBMC" #project name, will be on all plots
 
+# at any point you can come back here and save the current version of your condor object
+# it can then be read in later instead of starting from scratch
+saveRDS(condor, "condor_versionXX.rds")
+condor <- readRDS("condor_versiionXX.rds")
+
 #### ---- Read in data - MANDATORY ---- ####
 # get folder path for samples and working directory and copy in
 # mac: right click folder and press option, copy "" as pathname
@@ -46,23 +51,64 @@ condor <- prep_fcd(data_path = sample_dir,
                    cross_path_with_anno = TRUE,
                    max_cell = 10000000, # 10000000 start w. high limit to include all
                    useCSV = TRUE, # change to false if using fcs files
-                   transformation = "auto_logi", #"arcsinh",
+                   transformation = "arcsinh",
+                   cofactor = 150, #correct for FC data, 5 for CyTOF
                    #remove_param = c("FSC-H", "SSC-H", "FSC-W", "SSC-W", "Time"), 
                    anno_table = paste0(sample_dir,"AnnoTable.csv"), 
                    filename_col = "filename")
 
 AnnoTable <- read.csv(paste0(sample_dir,"AnnoTable.csv"), row.names = 1)
 
-# all meta data stored per cell in below, you can add, change and color/split plots/stats by anything added here as you go
-head(condor$anno$cell_anno)
-# Check that your AnnoTable per sample looks correct
-AnnoTable
-
 
 #### ---- Quality controls - not included in CyCondor pipeline - MANDATORY ---- ####
 # makes a QC folder where plots of below QC measures and 
 if (file.exists("QC")){} else {dir.create(file.path(main_dir, "QC"))}
 
+# data frame for QC purposes
+df_long <- melt(cbind(as.data.frame(condor$expr$orig),
+                      sample_id=condor$anno$cell_anno$sample_id,
+                      condition=condor$anno$cell_anno$condition), 
+                id.vars = c("sample_id","condition"))
+
+## 1) Marker names and channel integrity
+# Check marker integrity in condor object
+markers_in_condor <- colnames(condor$expr$orig)
+cat("Number of markers:", length(markers_in_condor), "\n")
+print(markers_in_condor)
+
+# NA check per marker per sample
+na_check <- cbind(condor$expr$orig,sample_id=condor$anno$cell_anno$sample_id) %>%
+  group_by(sample_id) %>%
+  summarise(across(where(is.numeric),
+                   ~sum(is.na(.)), .names="na_{.col}")) %>% as.data.frame()
+rownames(na_check) <- na_check$sample_id; na_check <- as.matrix(na_check[,-1]); max_val <- max(na_check);if (max_val == 0) {max_val <- 1}
+
+# if matrix is all white, you have no issues and can proceed
+ph <- pheatmap(na_check,color = colorRampPalette(c("white", "red"))(100),
+         breaks = seq(0, max_val, length.out = 101))
+print(ph)
+ggsave(paste0(main_dir,"QC/",dato,proj,"_ChannelIntegrity.pdf"), width = 8, height = 5, units = "in", plot = ph)
+
+## 2) Metadata integrity
+# all meta data stored per cell in below, you can add, change and color/split plots/stats by anything added here as you go
+head(condor$anno$cell_anno)
+# Check that your AnnoTable per sample looks correct
+AnnoTable
+# check that the filenames match between the two
+# if any sample-ids show up they are incorrectly named in your AnnoTable, if None show up you can proceed.
+AnnoTable$sample_id[!AnnoTable$sample_id %in% unique(condor$anno$cell_anno$sample_id)]
+
+
+## 3) Transformation correctness
+# flourescence as histogram per marker - transformation QC
+# Check bimodal / unimodal (markers for rare cell type markers) / trimodal (markers w. neg, low and high exp patterns)
+ggplot(df_long, aes(value)) +
+  geom_histogram(bins = 100) +
+  facet_wrap(~variable, scales = "free") +
+  theme_minimal()
+ggsave(paste0(main_dir,"QC/",dato,proj,"_QC-FlourescenceHistograms.pdf"), width = 10, height = 10, units = "in")
+
+## 4) Downsampling balance
 # check how many cells are attributed from each sample and go back to prep_fcd and change max_cell
 # to minimum of below to avoid downstream effects of larger sample sizes vs smaller sample sizes
 # condition groups should contribute proprotinally
@@ -82,39 +128,29 @@ perc_dist(condor, anno = "condition")
 perc_dist(condor, anno = "sex")
 
 
-# data frame for QC purposes
-df_long <- melt(cbind(as.data.frame(condor$expr$orig),
-                      sample_id=condor$anno$cell_anno$sample_id,
-                      condition=condor$anno$cell_anno$condition), 
-                id.vars = c("sample_id","condition"))
-
-# flourescence as histogram per marker - transformation QC
-# Check bimodal / unimodal (markers for rare cell type markers) / trimodal (markers w. neg, low and high exp patterns)
-ggplot(df_long, aes(value)) +
-  geom_histogram(bins = 100) +
-  facet_wrap(~variable, scales = "free") +
-  theme_minimal()
-ggsave(paste0(main_dir,"QC/",dato,proj,"_QC-FlourescenceHistograms.pdf"), width = 10, height = 10, units = "in")
-
+## 5) Per marker outlier check
 # Flourescence intensity per marker per sample - as in original FlowSOM paper
 # check samples look similar per condition
 ggplot(df_long, aes(x=sample_id, y=value, color = condition))+
-  geom_boxplot()+
+  geom_boxplot_jitter(outlier.jitter.width = NULL, outlier.size=0.25,
+                      outlier.jitter.height = 0,
+                      raster.dpi = getOption("ggrastr.default.dpi", 300))+
   theme_classic()+
   facet_wrap(~variable, scales = "free")+
   theme(axis.text.x = element_text(angle=90))
 ggsave(paste0(main_dir,"QC/",dato,proj,"_QC-FlourescenceBoxPlotsSplitPerSample.pdf"), width = 15, height = 15, units = "in")
 
-
 # 99% saturation check
 # Should be 0.001, if any higher inspect marker individually
 apply(as.data.frame(condor$expr$orig), 2, function(x) mean(x > quantile(x, 0.999)))
 
+## 6) Marker correlation
 # Correlation of markers, quick check for spillovers/potential compensation issues
 # check spill over/real correlation of markers in heatmap
 cor_mat <- cor(condor$expr$orig)
-pheatmap(cor_mat)
-ggsave(paste0(main_dir,"QC/",dato,proj,"_QC-FlourescenceCorrelation.pdf"), width = 8, height = 8, units = "in")
+ph <- pheatmap(cor_mat)
+print(ph)
+ggsave(paste0(main_dir,"QC/",dato,proj,"_QC-FlourescenceCorrelation.pdf"), width = 8, height = 8, units = "in", plot = ph)
 
 # function to identify high correlation pairs
 cor_pairs <- find_high_cor_pairs(cor_mat, threshold = 0.2) 
@@ -124,14 +160,15 @@ cor_pairs # all pairs with cor > 0.2 should be checked
 # If there's significant spill over you cannot use those markers for dimensionality reduction and clustering
 # Algorithm cannot know this is not true signal 
 
+## 7) Sample mixing PCA
 # PCA on per-sample medians before UMAP (check for batch effects/normal variance between samples)
 marker_cols <- colnames(condor$expr$orig) # or choose specific ones
 # extra_anno accepts up to two arguments, if you don't want to color or shape by anything set extra_anno = NULL
 PCA1 <- plot_pseudobulkPCA(condor, extra_anno = c("condition","sex"), marker_cols = marker_cols, AnnoTable=AnnoTable)
 print(PCA1)
-ggsave(paste0(main_dir,"QC/",dato,proj,"_QC-PseudobulkPCA.pdf"), width = 6, height = 6, units = "in")
+ggsave(paste0(main_dir,"QC/",dato,proj,"_QC-PseudobulkPCA.pdf"), width = 6, height = 6, units = "in", plot = PCA1)
 
-#### ---- Batch correction ---- ####
+#### ---- Batch correction - Run if indicated by QC ---- ####
 # If you run UMAP and clustering and clusters do not make biologically sense 
 # They could be affected by batch effects
 # Run this section and retry
@@ -353,42 +390,42 @@ ggsave(paste0(main_dir,umap_dir,dato,proj,"_UMAP_",res,".pdf"), width = 7, heigh
 
 #### ---- Marker expression - RidgePlots per cluster and heatmap ---- ####
 # first new folder per clustering
-resk_col <- hue_pal()(length(unique(condor$clustering[[res]][,1]))); names(resk_col) <- seq(1,length(unique(condor$clustering[[res]][,1]))) 
+resk_col <- hue_pal()(length(unique(condor$clustering[[res]][,1]))); names(resk_col) <- seq(1,length(unique(condor$clustering[[res]][,clus_var]))) 
 if (file.exists(res)){} else {dir.create(file.path(main_dir, res))}
 
 # Histogram of expression for each marker across different clusters
 for (mark in marker_cols){
-    histo_exp_plot <- ggplot(cbind(condor$expr$orig,cluster=condor$clustering[[res]][,1]),
+    histo_exp_plot <- ggplot(cbind(condor$expr$orig,cluster=condor$clustering[[res]][,clus_var]),
                              aes(x=condor$expr$orig[,mark], fill=cluster))+
       geom_density()+
       facet_wrap(.~cluster, ncol = 1)+
       labs(fill=res, x=mark)+
       theme_classic()
-    if (length(unique(condor$clustering[[res]][,1]))>5){len=1.1*length(unique(condor$clustering[[res]][,1]))}else(len=8)
+    if (length(unique(condor$clustering[[res]][,1]))>5){len=1.1*length(unique(condor$clustering[[res]][,clus_var]))}else(len=8)
     ggsave(paste0(main_dir,res,"/",dato,proj,"_Histogram_",mark,".pdf"), width = 5, height = len, plot = histo_exp_plot)}
 
 # Histogram of expression for each marker across different clusters, split between conditions
 # change "condition" to any (non continous) column name from your meta data - change in the two marked spots
 for (mark in marker_cols){
-  histo_exp_plot <- ggplot(cbind(condor$expr$orig,cluster=condor$clustering[[res]][,1],condor$anno$cell_anno),
+  histo_exp_plot <- ggplot(cbind(condor$expr$orig,cluster=condor$clustering[[res]][,clus_var],condor$anno$cell_anno),
                            aes(x=condor$expr$orig[,mark], fill = cluster))+
     geom_density()+
     facet_grid(cluster~condition)+ # change ~????
     labs(fill=res, x=mark)+
     theme_classic()
-  if (length(unique(condor$clustering[[res]][,1]))>5){len=1.1*length(unique(condor$clustering[[res]][,1]))}else(len=8)
+  if (length(unique(condor$clustering[[res]][,1]))>5){len=1.1*length(unique(condor$clustering[[res]][,clus_var]))}else(len=8)
   ggsave(paste0(main_dir,res,"/",dato,proj,"_Histogram_",mark,"conditionsplit.pdf"), width = 7, height = len, plot = histo_exp_plot)}
 
 # Or profiles of the conditions overlaid each other
 for (mark in marker_cols){
-  histo_exp_plot <- ggplot(cbind(condor$expr$orig,cluster=condor$clustering[[res]][,1],condor$anno$cell_anno),
+  histo_exp_plot <- ggplot(cbind(condor$expr$orig,cluster=condor$clustering[[res]][,clus_var],condor$anno$cell_anno),
                            aes(x=condor$expr$orig[,mark], fill = condition, color=condition))+
     geom_density(alpha=0.1)+
     facet_wrap(.~cluster, ncol = 1)+
     labs(fill=res, x=mark)+
     guides(fill = "none")+
     theme_classic()
-  if (length(unique(condor$clustering[[res]][,1]))>5){len=1.1*length(unique(condor$clustering[[res]][,1]))}else(len=8)
+  if (length(unique(condor$clustering[[res]][,1]))>5){len=1.1*length(unique(condor$clustering[[res]][,clus_var]))}else(len=8)
   ggsave(paste0(main_dir,res,"/",dato,proj,"_Histogram_",mark,"conditioncolor.pdf"), width = 4, height = len, plot = histo_exp_plot)}
 
 # Heatmap of protein expression averaged per cluster
@@ -413,6 +450,7 @@ ggsave(paste0(main_dir,res,"/",dato,proj,"_confusionMatrix.pdf"), width = 0.5*le
 p1 <- condor_cluster_composition(
   condor      = condor,
   cluster_slot = res,
+  clust_var = clus_var,
   anno_col    = "condition",
   palette = c("Healthy"="#00BFC4","COVID19"="#F8766D"), # use default, or specify in this line, # in front for default
   metric      = "percentage", # count or percentage

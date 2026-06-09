@@ -28,6 +28,7 @@ source("find_high_cor_pairs.R") # should be saved in working directory
 source("plot_pseudobulkPCA.R") # -||-
 source("perc_dist.R") # -||-
 source("geom_cluster_labels.R")  # -||-
+source("runPhenograph_issue35.R") # for sepcific error message when running phenograph
 
 #### ---- Variables to use for script - MANDATORY--- ####
 dato <- str_sub(str_replace_all(Sys.Date(),"-","_"), 3, -1)
@@ -319,6 +320,18 @@ for (res in clus_res){
                           input_type = input_expr[1], 
                           data_slot = input_expr[2], 
                           k = res)}
+# Some systems have errors w. phenograph, if you get error message:
+# Error in if (any(i < 0L)) { : missing value where TRUE/FALSE needed
+# instead try and run below for phenograph
+for (res in clus_res){
+  print(res)
+  # calculating
+  condor <- runPhenograph_issue35(fcd = condor, 
+                          input_type = input_expr[1], 
+                          data_slot = input_expr[2], 
+                          k = res)}
+
+
 
 #### ---- UMAPs of all available clusterings ---- ####
 # run loop to save all your clusterings in their respective umap folders

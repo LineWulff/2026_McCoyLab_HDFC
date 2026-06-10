@@ -24,11 +24,12 @@ library(pheatmap)
 library(uwot)
 library(viridis)
 library(scales)
-source("find_high_cor_pairs.R") # should be saved in working directory
-source("plot_pseudobulkPCA.R") # -||-
-source("perc_dist.R") # -||-
-source("geom_cluster_labels.R")  # -||-
-source("runPhenograph_issue35.R") # for sepcific error message when running phenograph
+source("HelperFunctions.R")
+#source("find_high_cor_pairs.R") # should be saved in working directory
+#source("plot_pseudobulkPCA.R") # -||-
+#source("perc_dist.R") # -||-
+#source("geom_cluster_labels.R")  # -||-
+#source("runPhenograph_issue35.R") # for sepcific error message when running phenograph
 
 #### ---- Variables to use for script - MANDATORY--- ####
 dato <- str_sub(str_replace_all(Sys.Date(),"-","_"), 3, -1)
@@ -196,7 +197,7 @@ condor$umap$orig <- umap_emb[,c(1,2)]; colnames(condor$umap$orig) <- c("UMAP1","
 
 #### ---- Plotting UMAPs ---####
 # first set whether you're using batch corrected or not
-batchcor <- "Yes" # "Yes" or "No"
+batchcor <- "No" # "Yes" or "No"
 ## first creating a folder
 if(batchcor=="No"){if (file.exists("UMAPs")){} else {dir.create(file.path(main_dir, "UMAPs"))};umap <-"orig";umap_dir <- "UMAPs/";input_expr <- c("expr","orig")} else if(batchcor=="Yes"){if (file.exists("UMAPs_bc")){} else {dir.create(file.path(main_dir, "UMAPs_bc"))};umap <-"pca_norm";umap_dir <- "UMAPs_bc/";input_expr <- c("pca","norm")}
 
@@ -212,7 +213,7 @@ ggsave(paste0(main_dir,umap_dir,dato,proj,"_UMAP_conditions.pdf"), width = 5, he
 # density version of above
 ggplot(condor$umap[[umap]], 
        aes(x=UMAP1, y=UMAP2, color = condor$anno$cell_anno$condition))+
-  geom_density_2d(bins=20)+
+  geom_density_2d()+
   labs(color="condition")+
   theme_classic()+
   theme(axis.ticks = element_blank(),axis.text = element_blank())
@@ -292,7 +293,7 @@ for (mark in marker_cols){
 
 #### ---- Clustering w. FlowSOM ---- ####
 # first set whether you're using batch corrected or not
-batchcor <- "Yes" # "Yes" or "No"
+batchcor <- "No" # "Yes" or "No"
 ## first creating a folder
 if(batchcor=="No"){if (file.exists("UMAPs")){} else {dir.create(file.path(main_dir, "UMAPs"))};umap <-"orig";umap_dir <- "UMAPs/";input_expr <- c("expr","orig")} else if(batchcor=="Yes"){if (file.exists("UMAPs_bc")){} else {dir.create(file.path(main_dir, "UMAPs_bc"))};umap <-"pca_norm";umap_dir <- "UMAPs_bc/";input_expr <- c("pca","norm")}
 
@@ -358,7 +359,7 @@ for (clus in names(condor$clustering)){
 
 ## now make sure your standard UMAP is set to your batch/not batch corrected again
 # first set whether you're using batch corrected or not
-batchcor <- "Yes" #or "No"
+batchcor <- "No" #or "No"
 ## first creating a folder
 if(batchcor=="No"){if (file.exists("UMAPs")){} else {dir.create(file.path(main_dir, "UMAPs"))};umap <-"orig";umap_dir <- "UMAPs/";input_expr <- c("expr","orig")} else if(batchcor=="Yes"){if (file.exists("UMAPs_bc")){} else {dir.create(file.path(main_dir, "UMAPs_bc"))};umap <-"pca_norm";umap_dir <- "UMAPs_bc/";input_expr <- c("pca","norm")}
 
@@ -370,7 +371,7 @@ names(condor$clustering)
 # check number of clusters in a particular phenograph clustering
 length(unique(condor$clustering[["FlowSOM_pca_norm_k_14" ]][,1]))
 ## FlowSOM clusterings examples
-res <- "FlowSOM_expr_orig_k_7" # NO batch correction
+res <- "FlowSOM_expr_orig_k_14" # NO batch correction
 res <- "FlowSOM_pca_norm_k_14" # batch corrected
 #Phenograph clustering example
 res <- "phenograph_expr_orig_k_80" # NO natch correction
